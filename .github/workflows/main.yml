@@ -9,15 +9,25 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Uses dedicated, pre-built infrastructure to get the binary file safely
-      - name: Install Cloudflared
-        uses: gaplo917/install-cloudflared-action@v1
+      - name: Download and Install Cloudflared Directly
+        run: |
+          # 1. Download the raw debian package file directly from Cloudflare's secure mirror index
+          # Using -O ensures it saves as a file and fails immediately if blocked
+          wget -q https://cloudflare.com -O cloudflared.deb
+          
+          # 2. Install the package using dpkg
+          sudo dpkg -i cloudflared.deb
+          
+          # 3. Verify it's a real executable binary
+          cloudflared --version
 
       - name: Start Xvfb and Google Chrome with CDP
         run: |
+          # 1. Start the pre-installed virtual display server
           Xvfb :99 -screen 0 1280x1024x24 -ac +extension GLX +render -noreset &
           export DISPLAY=:99
           
+          # 2. Launch Google Chrome with CDP configurations 
           google-chrome \
             --remote-debugging-port=9222 \
             --remote-allow-origins=* \
@@ -35,13 +45,18 @@ jobs:
           echo "STARTING TUNNEL TO CHROME CDP PORT..."
           echo "--------------------------------------------------------"
           
+          # Run the tunnel in the background and redirect output to a log file
           cloudflared tunnel --url http://127.0.0.1:9222 --http2-origin=true > cloudflared.log 2>&1 &
           
+          # Wait for the tunnel connection handshake to secure an ephemeral URL
           sleep 10
+          
+          # Print the tunnel log containing the "trycloudflare.com" address to the console
           cat cloudflared.log
           
           echo "--------------------------------------------------------"
           echo "KEEPING WORKFLOW ALIVE FOR REMOTE PLAYWRIGHT SESSIONS..."
           echo "--------------------------------------------------------"
           
+          # Watch the logs continuously to keep the runner session active
           tail -f cloudflared.log
