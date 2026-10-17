@@ -39,8 +39,8 @@ jobs:
           echo "STARTING TUNNEL TO CHROME CDP PORT..."
           echo "--------------------------------------------------------"
           
-          # Crucial Fix: Overriding the HTTP Host header satisfies Chrome's internal security checks
-          cloudflared tunnel --url http://127.0.0.1:9222 --http2-origin=true --http-header "Host: localhost:9222" > cloudflared.log 2>&1 &
+          # Fix: --http-host-header forces cloudflared to masquerade as localhost
+          cloudflared tunnel --url http://127.0.0.1:9222 --http2-origin=true --http-host-header "localhost:9222" > cloudflared.log 2>&1 &
           
           # Wait for the tunnel connection handshake to secure an ephemeral URL
           sleep 10
@@ -54,4 +54,5 @@ jobs:
           
           # Watch the logs continuously to keep the runner session active
           tail -f cloudflared.log
+
 
