@@ -12,11 +12,15 @@ jobs:
 
       - name: Download and Install Cloudflared Binary
         run: |
-          # Download the official pre-compiled Linux binary directly
-          curl -L https://github.com -o cloudflared
-          chmod +x cloudflared
-          # Move it to system path so it can be called globally
-          sudo mv cloudflared /usr/local/bin/
+          # 1. Download the official pre-compiled Debian package directly from Cloudflare's server
+          curl -L https://cloudflare.com -o cloudflare.gpg
+          curl -L https://github.com -o cloudflared.deb
+          
+          # 2. Install the package using dpkg (this avoids adding complex apt repositories)
+          sudo dpkg -i cloudflared.deb
+          
+          # 3. Verify it was installed correctly and isn't an HTML file
+          cloudflared --version
 
       - name: Start Xvfb and Google Chrome with CDP
         run: |
