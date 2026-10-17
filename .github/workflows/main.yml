@@ -13,35 +13,24 @@ jobs:
     timeout-minutes: 350
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Chrome and dependencies
+      - name: Install dependencies
+        shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            xvfb \
-            wget \
-            ca-certificates \
-            nodejs \
-            npm
+          sudo apt-get install -y xvfb wget curl ca-certificates
 
           wget -q \
             https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
             -O /tmp/chrome.deb
-
           sudo apt-get install -y /tmp/chrome.deb
 
           wget -q \
             https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb \
             -O /tmp/cloudflared.deb
-
           sudo dpkg -i /tmp/cloudflared.deb
 
-      - name: Install Node dependencies
-        run: npm install http-proxy
-
       - name: Start virtual display
+        shell: bash
         run: |
           Xvfb :99 -screen 0 1365x768x24 \
             -ac +extension GLX +render -noreset \
@@ -50,7 +39,8 @@ jobs:
           echo $! > /tmp/xvfb.pid
           sleep 2
 
-      - name: Start Chrome
+      - name: Start Chrome with CDP
+        shell: bash
         env:
           DISPLAY: :99
         run: |
@@ -72,7 +62,7 @@ jobs:
 
           for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:9222/json/version >/dev/null; then
-              echo "Chrome CDP is ready"
+              echo "Chrome CDP is ready."
               exit 0
             fi
             sleep 1
@@ -81,47 +71,59 @@ jobs:
           cat /tmp/chrome.log
           exit 1
 
-      - name: Start Node gateway
+      - name: Start Cloudflare Quick Tunnel
+        shell: bash
         run: |
-          node gateway.js > /tmp/gateway.log 2>&1 &
-          echo $! > /tmp/gateway.pid
+          cloudflared tunnel \
+            --no-autoupdate \
+            --url http://127.0.0.1:9222 \
+            > /tmp/cloudflared.log 2>&1 &
 
-          for i in $(seq 1 15); do
-            if curl -fsS http://127.0.0.1:3000/json/version >/dev/null; then
-              echo "Gateway is ready"
-              exit 0
+          echo $! > /tmp/cloudflared.pid
+
+          URL=""
+          for i in $(seq 1 60); do
+            URL=$(grep -Eo \
+              'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' \
+              /tmp/cloudflared.log | head -n 1 || true)
+
+            if [ -n "$URL" ]; then
+              echo "=================================="
+              echo "REMOTE CHROME URL: $URL"
+              echo "=================================="
+              break
             fi
-            sleep 1
+
+            sleep 2
           done
 
-          cat /tmp/gateway.log
-          exit 1
+          if [ -z "$URL" ]; then
+            cat /tmp/cloudflared.log
+            exit 1
+          fi
 
-      - name: Start Cloudflare Quick Tunnel
-  run: |
-    cloudflared tunnel \
-      --no-autoupdate \
-      --url http://127.0.0.1:9222 \
-      > /tmp/cloudflared.log 2>&1 &
+          # Keep the browser and tunnel alive.
+          sleep 20400
 
-    echo $! > /tmp/cloudflared.pid
+      - name: Print logs
+        if: always()
+        shell: bash
+        run: |
+          echo "===== Chrome ====="
+          tail -n 60 /tmp/chrome.log 2>/dev/null || true
 
-    for i in $(seq 1 60); do
-      URL=$(grep -Eo \
-        'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' \
-        /tmp/cloudflared.log | head -n 1 || true)
+          echo "===== Xvfb ====="
+          tail -n 30 /tmp/xvfb.log 2>/dev/null || true
 
-      if [ -n "$URL" ]; then
-        echo "REMOTE CHROME URL: $URL"
-        break
-      fi
+          echo "===== Cloudflare ====="
+          tail -n 60 /tmp/cloudflared.log 2>/dev/null || true
 
-      sleep 2
-    done
-
-    if [ -z "${URL:-}" ]; then
-      cat /tmp/cloudflared.log
-      exit 1
-    fi
-
-    sleep 20400
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          for f in /tmp/cloudflared.pid /tmp/chrome.pid /tmp/xvfb.pid; do
+            if [ -f "$f" ]; then
+              kill "$(cat "$f")" 2>/dev/null || true
+            fi
+          done
