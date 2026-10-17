@@ -40,8 +40,24 @@ jobs:
       - name: Start Cloudflare Quick Tunnel & Keep Alive
         run: |
           echo "--------------------------------------------------------"
-          echo "LOOK BELOW FOR YOUR TEMPORARY TRYCLOUDFLARE URL"
+          echo "STARTING TUNNEL TO CHROME CDP PORT..."
           echo "--------------------------------------------------------"
           
-          # Start cloudflared routing to Chrome's CDP port.
-          cloudflared tunnel --url http://localhost:9222
+          # 1. Run the tunnel in the background and redirect output to a log file
+          # Adding --http2-origin forces cloudflared to handle persistent connections properly
+          cloudflared tunnel --url http://127.0.0.1:9222 --http2-origin=true > cloudflared.log 2>&1 &
+          
+          # 2. Wait a few seconds for the tunnel to establish and claim the ephemeral URL
+          sleep 8
+          
+          # 3. Print the tunnel log containing the "trycloudflare.com" address to the console
+          cat cloudflared.log
+          
+          echo "--------------------------------------------------------"
+          echo "KEEPING WORKFLOW ALIVE FOR REMOTE PLAYWRIGHT SESSIONS..."
+          echo "--------------------------------------------------------"
+          
+          # 4. Tail the log file continuously to keep the step alive.
+          # The workflow will stay active and running until you manually stop it.
+          tail -f cloudflared.log
+
