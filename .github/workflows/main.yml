@@ -1,129 +1,47 @@
-
-name: Remote Chrome CDP
-
-on:
-  workflow_dispatch:
-
-permissions:
-  contents: read
+name: Remote Playwright CDP Server
+on: 
+  workflow_dispatch: # Allows you to manually trigger it from the GitHub UI
 
 jobs:
-  chrome:
+  run-chrome:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
-
     steps:
-      - name: Install dependencies
-        shell: bash
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Cloudflared
         run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb wget curl ca-certificates
+          sudo mkdir -p --mode=0755 /etc/apt/keyrings
+          curl -fsSL https://cloudflare.com | sudo gpg --dearmor -o /etc/apt/keyrings/cloudflare-main.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/cloudflare-main.gpg] https://cloudflare.com stable main" | sudo tee /etc/apt/sources.list.d/cloudflare-main.list
+          sudo apt-get update && sudo apt-get install -y cloudflared xvfb google-chrome-stable
 
-          wget -q \
-            https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
-            -O /tmp/chrome.deb
-          sudo apt-get install -y /tmp/chrome.deb
-
-          wget -q \
-            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb \
-            -O /tmp/cloudflared.deb
-          sudo dpkg -i /tmp/cloudflared.deb
-
-      - name: Start virtual display
-        shell: bash
+      - name: Start Xvfb and Google Chrome with CDP
         run: |
-          Xvfb :99 -screen 0 1365x768x24 \
-            -ac +extension GLX +render -noreset \
-            > /tmp/xvfb.log 2>&1 &
-
-          echo $! > /tmp/xvfb.pid
-          sleep 2
-
-      - name: Start Chrome with CDP
-        shell: bash
-        env:
-          DISPLAY: :99
-        run: |
-          mkdir -p /tmp/remote-chrome-profile
-
-          google-chrome \
+          # 1. Start the virtual display buffer in the background
+          Xvfb :99 -screen 0 1280x1024x24 -ac +extension GLX +render -noreset &
+          export DISPLAY=:99
+          
+          # 2. Launch real Google Chrome bound to the virtual display
+          # Crucial: --remote-allow-origins=* stops the HTTP 500/Host rejection error
+          google-chrome-stable \
+            --remote-debugging-port=9222 \
+            --remote-allow-origins=* \
             --no-sandbox \
+            --disable-setuid-sandbox \
             --disable-dev-shm-usage \
             --disable-gpu \
-            --no-first-run \
-            --no-default-browser-check \
-            --user-data-dir=/tmp/remote-chrome-profile \
-            --remote-debugging-address=127.0.0.1 \
-            --remote-debugging-port=9222 \
-            about:blank \
-            > /tmp/chrome.log 2>&1 &
+            --headless=false &
+            
+          # Give Chrome a few seconds to fully initialize
+          sleep 5
 
-          echo $! > /tmp/chrome.pid
-
-          for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:9222/json/version >/dev/null; then
-              echo "Chrome CDP is ready."
-              exit 0
-            fi
-            sleep 1
-          done
-
-          cat /tmp/chrome.log
-          exit 1
-
-      - name: Start Cloudflare Quick Tunnel
-        shell: bash
+      - name: Start Cloudflare Quick Tunnel & Keep Alive
         run: |
-          cloudflared tunnel \
-            --no-autoupdate \
-            --url http://127.0.0.1:9222 \
-            > /tmp/cloudflared.log 2>&1 &
-
-          echo $! > /tmp/cloudflared.pid
-
-          URL=""
-          for i in $(seq 1 60); do
-            URL=$(grep -Eo \
-              'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' \
-              /tmp/cloudflared.log | head -n 1 || true)
-
-            if [ -n "$URL" ]; then
-              echo "=================================="
-              echo "REMOTE CHROME URL: $URL"
-              echo "=================================="
-              break
-            fi
-
-            sleep 2
-          done
-
-          if [ -z "$URL" ]; then
-            cat /tmp/cloudflared.log
-            exit 1
-          fi
-
-          # Keep the browser and tunnel alive.
-          sleep 20400
-
-      - name: Print logs
-        if: always()
-        shell: bash
-        run: |
-          echo "===== Chrome ====="
-          tail -n 60 /tmp/chrome.log 2>/dev/null || true
-
-          echo "===== Xvfb ====="
-          tail -n 30 /tmp/xvfb.log 2>/dev/null || true
-
-          echo "===== Cloudflare ====="
-          tail -n 60 /tmp/cloudflared.log 2>/dev/null || true
-
-      - name: Cleanup
-        if: always()
-        shell: bash
-        run: |
-          for f in /tmp/cloudflared.pid /tmp/chrome.pid /tmp/xvfb.pid; do
-            if [ -f "$f" ]; then
-              kill "$(cat "$f")" 2>/dev/null || true
-            fi
-          done
+          echo "--------------------------------------------------------"
+          echo "LOOK BELOW FOR YOUR TEMPORARY TRYCLOUDFLARE URL"
+          echo "--------------------------------------------------------"
+          
+          # Start cloudflared routing to Chrome's CDP port. 
+          # The workflow will stay active and running until you manually cancel it.
+          cloudflared tunnel --url http://localhost:9222
