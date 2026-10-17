@@ -9,16 +9,10 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Download and Install Cloudflared Directly
+      # Installs the cloudflared executable cleanly into the system pathway via NPM
+      - name: Install Cloudflared via Node Package Manager
         run: |
-          # 1. Download the raw debian package file directly from Cloudflare's secure mirror index
-          # Using -O ensures it saves as a file and fails immediately if blocked
-          wget -q https://cloudflare.com -O cloudflared.deb
-          
-          # 2. Install the package using dpkg
-          sudo dpkg -i cloudflared.deb
-          
-          # 3. Verify it's a real executable binary
+          sudo npm install -g cloudflared --unsafe-perm
           cloudflared --version
 
       - name: Start Xvfb and Google Chrome with CDP
