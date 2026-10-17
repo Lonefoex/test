@@ -1,37 +1,23 @@
 name: Remote Playwright CDP Server
 on: 
-  workflow_dispatch: # Allows you to manually trigger it from the GitHub UI
+  workflow_dispatch: 
 
 jobs:
   run-chrome:
-    # Explicitly pinning to 24.04 prevents issues with the shifting ubuntu-latest label
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Download and Install Cloudflared Binary
-        run: |
-          # 1. Download the raw, un-redirected stable binary directly from Cloudflare's CDN pipeline
-          curl -L https://cloudflare.com -o cloudflared
-          
-          # 2. Make it an executable binary file
-          chmod +x cloudflared
-          
-          # 3. Move it to the system environment path
-          sudo mv cloudflared /usr/local/bin/
-          
-          # 4. Confirm the runtime binary runs natively and displays its version
-          cloudflared --version
-
+      # Uses dedicated, pre-built infrastructure to get the binary file safely
+      - name: Install Cloudflared
+        uses: gaplo917/install-cloudflared-action@v1
 
       - name: Start Xvfb and Google Chrome with CDP
         run: |
-          # 1. Start the virtual display buffer in the background (Pre-installed on runner)
           Xvfb :99 -screen 0 1280x1024x24 -ac +extension GLX +render -noreset &
           export DISPLAY=:99
           
-          # 2. Launch Google Chrome (Pre-installed on runner)
           google-chrome \
             --remote-debugging-port=9222 \
             --remote-allow-origins=* \
@@ -41,7 +27,6 @@ jobs:
             --disable-gpu \
             --headless=false &
             
-          # Give Chrome a moment to initialize the debugging port
           sleep 5
 
       - name: Start Cloudflare Quick Tunnel & Keep Alive
@@ -50,21 +35,13 @@ jobs:
           echo "STARTING TUNNEL TO CHROME CDP PORT..."
           echo "--------------------------------------------------------"
           
-          # 1. Run the tunnel in the background and redirect output to a log file
-          # Adding --http2-origin forces cloudflared to handle persistent connections properly
           cloudflared tunnel --url http://127.0.0.1:9222 --http2-origin=true > cloudflared.log 2>&1 &
           
-          # 2. Wait a few seconds for the tunnel to establish and claim the ephemeral URL
-          sleep 8
-          
-          # 3. Print the tunnel log containing the "trycloudflare.com" address to the console
+          sleep 10
           cat cloudflared.log
           
           echo "--------------------------------------------------------"
           echo "KEEPING WORKFLOW ALIVE FOR REMOTE PLAYWRIGHT SESSIONS..."
           echo "--------------------------------------------------------"
           
-          # 4. Tail the log file continuously to keep the step alive.
-          # The workflow will stay active and running until you manually stop it.
           tail -f cloudflared.log
-
