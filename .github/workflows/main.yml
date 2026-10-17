@@ -4,27 +4,28 @@ on:
 
 jobs:
   run-chrome:
-    runs-on: ubuntu-latest
+    # Explicitly pinning to 24.04 prevents issues with the shifting ubuntu-latest label
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Install Cloudflared
+      - name: Download and Install Cloudflared Binary
         run: |
-          sudo mkdir -p --mode=0755 /etc/apt/keyrings
-          curl -fsSL https://cloudflare.com | sudo gpg --dearmor -o /etc/apt/keyrings/cloudflare-main.gpg
-          echo "deb [signed-by=/etc/apt/keyrings/cloudflare-main.gpg] https://cloudflare.com stable main" | sudo tee /etc/apt/sources.list.d/cloudflare-main.list
-          sudo apt-get update && sudo apt-get install -y cloudflared xvfb google-chrome-stable
+          # Download the official pre-compiled Linux binary directly
+          curl -L https://github.com -o cloudflared
+          chmod +x cloudflared
+          # Move it to system path so it can be called globally
+          sudo mv cloudflared /usr/local/bin/
 
       - name: Start Xvfb and Google Chrome with CDP
         run: |
-          # 1. Start the virtual display buffer in the background
+          # 1. Start the virtual display buffer in the background (Pre-installed on runner)
           Xvfb :99 -screen 0 1280x1024x24 -ac +extension GLX +render -noreset &
           export DISPLAY=:99
           
-          # 2. Launch real Google Chrome bound to the virtual display
-          # Crucial: --remote-allow-origins=* stops the HTTP 500/Host rejection error
-          google-chrome-stable \
+          # 2. Launch Google Chrome (Pre-installed on runner)
+          google-chrome \
             --remote-debugging-port=9222 \
             --remote-allow-origins=* \
             --no-sandbox \
@@ -33,7 +34,7 @@ jobs:
             --disable-gpu \
             --headless=false &
             
-          # Give Chrome a few seconds to fully initialize
+          # Give Chrome a moment to initialize the debugging port
           sleep 5
 
       - name: Start Cloudflare Quick Tunnel & Keep Alive
@@ -42,6 +43,5 @@ jobs:
           echo "LOOK BELOW FOR YOUR TEMPORARY TRYCLOUDFLARE URL"
           echo "--------------------------------------------------------"
           
-          # Start cloudflared routing to Chrome's CDP port. 
-          # The workflow will stay active and running until you manually cancel it.
+          # Start cloudflared routing to Chrome's CDP port.
           cloudflared tunnel --url http://localhost:9222
