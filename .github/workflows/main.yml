@@ -1,58 +1,60 @@
-name: Remote Playwright CDP Server
-on: 
-  workflow_dispatch: 
+name: Undetectable Bot Bypass Run
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: # Allows you to trigger manually from the GitHub UI
 
 jobs:
-  run-chrome:
-    runs-on: ubuntu-24.04
+  run-stealth-browser:
+    runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      # Installs the cloudflared executable cleanly into the system pathway via NPM
-      - name: Install Cloudflared via Node Package Manager
-        run: |
-          sudo npm install -g cloudflared --unsafe-perm
-          cloudflared --version
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: 'npm'
 
-      - name: Start Xvfb and Google Chrome with CDP
-        run: |
-          # 1. Start the pre-installed virtual display server
-          Xvfb :99 -screen 0 1280x1024x24 -ac +extension GLX +render -noreset &
-          export DISPLAY=:99
-          
-          # 2. Launch Google Chrome with CDP configurations 
-          google-chrome \
-            --remote-debugging-port=9222 \
-            --remote-allow-origins=* \
-            --no-sandbox \
-            --disable-setuid-sandbox \
-            --disable-dev-shm-usage \
-            --disable-gpu \
-            --headless=false &
-            
-          sleep 5
+    - name: Install Project Dependencies
+      run: |
+        npm install
+        # Ensure 'camoufox' and 'playwright' are installed in your package.json
 
-      - name: Start Cloudflare Quick Tunnel & Keep Alive
-        run: |
-          echo "--------------------------------------------------------"
-          echo "STARTING TUNNEL TO CHROME CDP PORT..."
-          echo "--------------------------------------------------------"
-          
-          # Fix: --http-host-header forces cloudflared to masquerade as localhost
-          cloudflared tunnel --url http://127.0.0.1:9222 --http2-origin=true --http-host-header "localhost:9222" > cloudflared.log 2>&1 &
-          
-          # Wait for the tunnel connection handshake to secure an ephemeral URL
-          sleep 10
-          
-          # Print the tunnel log containing the "trycloudflare.com" address to the console
-          cat cloudflared.log
-          
-          echo "--------------------------------------------------------"
-          echo "KEEPING WORKFLOW ALIVE FOR REMOTE PLAYWRIGHT SESSIONS..."
-          echo "--------------------------------------------------------"
-          
-          # Watch the logs continuously to keep the runner session active
-          tail -f cloudflared.log
+    - name: Install System Dependencies for Camoufox & Virtual Display
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y xvfb dbus-x11 xauth libgtk-3-0 libdbus-glib-1-2 libxt6 libfluxbox wmctrl
 
+    - name: Fetch Camoufox Stealth Binaries
+      run: npx camoufox fetch
 
+    - name: Start Xvfb and Camoufox in Background
+      env:
+        DISPLAY: :99
+      run: |
+        # Start the virtual framebuffer
+        Xvfb :99 -screen 0 1920x1080x24 &
+        
+        # Wait a brief moment for Xvfb to initialize
+        sleep 2
+        
+        # Launch Camoufox bound to the virtual display and expose CDP port 9222
+        npx camoufox --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 &
+        
+        # Give the browser 5 seconds to fully launch and open port 9222
+        sleep 5
+
+    - name: Execute Playwright Script
+      run: node stealth-connect.js
+
+    # Optional: Upload screenshots or data generated during the run to view later
+    - name: Upload Fingerprint Artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: stealth-screenshots
+        path: ./fingerprint_result.png
