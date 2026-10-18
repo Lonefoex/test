@@ -1,20 +1,24 @@
 // stealth-connect.js
-const { chromium } = require('playwright');
+const { firefox } = require('playwright'); // Use firefox, not chromium!
 
 (async () => {
-  console.log("Connecting to Camoufox via CDP...");
-  // Connect to the background Camoufox instance running on port 9222
-  const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+  console.log("Connecting to Camoufox via WebSocket Server...");
   
-  const contexts = browser.contexts();
-  const page = contexts.length > 0 ? await contexts[0].newPage() : await browser.newPage();
+  try {
+    const browser = await firefox.connect('ws://127.0.0.1:9222');
+    console.log("Successfully connected to stealth browser context.");
+    
+    const page = await browser.newPage();
 
-  console.log("Navigating to target...");
-  await page.goto('https://sannysoft.com', { waitUntil: 'networkidle' });
-  
-  // Save the result so you can download it from GitHub Actions Artifacts
-  await page.screenshot({ path: 'fingerprint_result.png', fullPage: true });
-  console.log("Screenshot successfully saved to fingerprint_result.png");
+    console.log("Navigating to target footprint checker...");
+    await page.goto('https://sannysoft.com', { waitUntil: 'networkidle' });
+    
+    await page.screenshot({ path: 'fingerprint_result.png', fullPage: true });
+    console.log("Fingerprint screenshot successfully captured.");
 
-  await browser.close();
+    await browser.close();
+  } catch (error) {
+    console.error("Automation Connection Failed:", error.message);
+    process.exit(1);
+  }
 })();
