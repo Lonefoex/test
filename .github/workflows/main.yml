@@ -27,7 +27,8 @@ jobs:
     - name: Install System Dependencies for Camoufox & Virtual Display
       run: |
         sudo apt-get update
-        sudo apt-get install -y xvfb dbus-x11 xauth libgtk-3-0 libdbus-glib-1-2 libxt6 libfluxbox wmctrl
+        sudo apt-get install -y xvfb dbus-x11 xauth libgtk-3-0 libdbus-glib-1-2 libxt6 wmctrl fluxbox
+
 
     - name: Fetch Camoufox Stealth Binaries
       run: npx camoufox fetch
